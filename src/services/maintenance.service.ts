@@ -17,6 +17,8 @@ const normalizeStatusDates = (body: any) => {
   return body;
 };
 
+const isAssignedCrew = (role?: string) => ["crew", "user"].includes(role || "");
+
 export const MaintenanceService = {
   async list(req: Request) {
     const { ship, status, assignedTo, from, to, mine } = req.query;
@@ -26,7 +28,7 @@ export const MaintenanceService = {
     if (ship) filter.ship = ship;
     if (status) filter.status = status;
     if (assignedTo) filter.assignedTo = assignedTo;
-    if (["crew", "user"].includes(req.user?.role || "")) filter.assignedTo = req.user?.id;
+    if (isAssignedCrew(req.user?.role)) filter.assignedTo = req.user?.id;
     if (mine === "true" && req.user?.id) filter.assignedTo = req.user.id;
     if (from || to) {
       filter.dueDate = {};
@@ -44,8 +46,11 @@ export const MaintenanceService = {
       UserModel.findById(req.body.assignedTo),
     ]);
     if (!ship) throw new ApiError(400, "Selected ship does not exist");
-    if (!assignee || !["crew", "user"].includes(assignee.role)) {
+    if (!assignee || !isAssignedCrew(assignee.role)) {
       throw new ApiError(400, "Maintenance tasks can only be assigned to crew members");
+    }
+    if (ship.status === "inactive") {
+      throw new ApiError(400, "Cannot create maintenance tasks for an inactive ship");
     }
 
     const task = await MaintenanceTaskModel.create({
@@ -73,8 +78,14 @@ export const MaintenanceService = {
     if (!req.user?.id) throw new ApiError(401, "Unauthorized");
     const task = await MaintenanceTaskModel.findById(req.params.id);
     if (!task) throw new ApiError(404, "Maintenance task not found");
-    if (["crew", "user"].includes(req.user.role) && task.assignedTo.toString() !== req.user.id) {
+    if (isAssignedCrew(req.user.role) && task.assignedTo.toString() !== req.user.id) {
       throw new ApiError(403, "You can only update tasks assigned to you");
+    }
+    if (task.status === "completed" && req.body.status !== "completed") {
+      throw new ApiError(400, "Completed maintenance tasks cannot be reopened from the crew workflow");
+    }
+    if (["inProgress", "completed"].includes(req.body.status) && !req.body.note) {
+      throw new ApiError(400, "A work note is required when updating maintenance status");
     }
 
     task.status = req.body.status;
@@ -90,7 +101,7 @@ export const MaintenanceService = {
     if (!req.user?.id) throw new ApiError(401, "Unauthorized");
     const task = await MaintenanceTaskModel.findById(req.params.id);
     if (!task) throw new ApiError(404, "Maintenance task not found");
-    if (["crew", "user"].includes(req.user.role) && task.assignedTo.toString() !== req.user.id) {
+    if (isAssignedCrew(req.user.role) && task.assignedTo.toString() !== req.user.id) {
       throw new ApiError(403, "You can only comment on tasks assigned to you");
     }
     task.comments.push({ author: req.user.id as any, note: req.body.note, createdAt: new Date() });

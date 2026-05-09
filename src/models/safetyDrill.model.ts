@@ -14,6 +14,10 @@ export interface ISafetyDrill extends Document {
   title: string;
   drillType: "fire" | "evacuation" | "manOverboard" | "abandonShip" | "medical" | "other";
   ship: Types.ObjectId;
+  location: string;
+  musterStation: string;
+  objective?: string;
+  durationMinutes: number;
   scheduledDate: Date;
   status: DrillStatus;
   participants: IDrillParticipant[];
@@ -42,6 +46,10 @@ const safetyDrillSchema = new Schema<ISafetyDrill>(
       required: true,
     },
     ship: { type: Schema.Types.ObjectId, ref: "Ship", required: true },
+    location: { type: String, required: true, trim: true },
+    musterStation: { type: String, required: true, trim: true },
+    objective: { type: String, trim: true },
+    durationMinutes: { type: Number, required: true, min: 5, max: 480 },
     scheduledDate: { type: Date, required: true },
     status: {
       type: String,

@@ -13,6 +13,12 @@ const populateDrill = [
 const participantsFromIds = (ids: string[] = []) =>
   [...new Set(ids)].map((crew) => ({ crew, attended: false, completed: false }));
 
+const startOfDay = (date: Date) => {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+};
+
 export const DrillService = {
   async list(req: Request) {
     const { ship, status, from, to, mine } = req.query;
@@ -35,6 +41,9 @@ export const DrillService = {
     if (!req.user?.id) throw new ApiError(401, "Unauthorized");
     const ship = await ShipModel.findById(req.body.ship);
     if (!ship) throw new ApiError(400, "Selected ship does not exist");
+    if (ship.status === "inactive") {
+      throw new ApiError(400, "Cannot schedule drills for an inactive ship");
+    }
 
     const participantIds = [...new Set<string>(req.body.participants || [])];
     const participantCount = await UserModel.countDocuments({
@@ -77,6 +86,13 @@ export const DrillService = {
       (item) => item.crew.toString() === req.user?.id
     );
     if (!participant) throw new ApiError(403, "You are not assigned to this drill");
+    if (drill.status === "cancelled") throw new ApiError(400, "Cannot mark a cancelled drill");
+    if (startOfDay(new Date()) < startOfDay(drill.scheduledDate)) {
+      throw new ApiError(400, "Attendance can only be marked on or after the scheduled drill date");
+    }
+    if (req.body.completed && !req.body.attended) {
+      throw new ApiError(400, "Drill completion requires attendance");
+    }
 
     participant.attended = req.body.attended;
     participant.completed = req.body.completed;

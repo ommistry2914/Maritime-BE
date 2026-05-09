@@ -7,7 +7,7 @@ const percent = (complete: number, total: number) =>
 
 export const ComplianceService = {
   async summary(req: Request) {
-    const { ship } = req.query;
+    const { ship, from, to } = req.query;
     const today = new Date();
     const maintenanceFilter: Record<string, any> = {};
     const drillFilter: Record<string, any> = {};
@@ -15,14 +15,28 @@ export const ComplianceService = {
       maintenanceFilter.ship = ship;
       drillFilter.ship = ship;
     }
+    if (from || to) {
+      maintenanceFilter.dueDate = {};
+      drillFilter.scheduledDate = {};
+      if (from) {
+        maintenanceFilter.dueDate.$gte = new Date(String(from));
+        drillFilter.scheduledDate.$gte = new Date(String(from));
+      }
+      if (to) {
+        maintenanceFilter.dueDate.$lte = new Date(String(to));
+        drillFilter.scheduledDate.$lte = new Date(String(to));
+      }
+    }
 
     const [
       totalMaintenance,
       completedMaintenance,
       pendingMaintenance,
       overdueMaintenance,
+      lateCompletedMaintenance,
       totalDrills,
-      completedDrills,
+      totalDrillAssignments,
+      completedDrillAssignments,
       missedDrills,
       recentMaintenance,
       upcomingDrills,
@@ -35,8 +49,23 @@ export const ComplianceService = {
         status: { $ne: "completed" },
         dueDate: { $lt: today },
       }),
+      MaintenanceTaskModel.countDocuments({
+        ...maintenanceFilter,
+        status: "completed",
+        $expr: { $gt: ["$completedAt", "$dueDate"] },
+      }),
       SafetyDrillModel.countDocuments(drillFilter),
-      SafetyDrillModel.countDocuments({ ...drillFilter, status: "completed" }),
+      SafetyDrillModel.aggregate([
+        { $match: drillFilter },
+        { $unwind: "$participants" },
+        { $count: "count" },
+      ]),
+      SafetyDrillModel.aggregate([
+        { $match: drillFilter },
+        { $unwind: "$participants" },
+        { $match: { "participants.completed": true } },
+        { $count: "count" },
+      ]),
       SafetyDrillModel.countDocuments({
         ...drillFilter,
         status: { $ne: "completed" },
@@ -54,7 +83,9 @@ export const ComplianceService = {
     ]);
 
     const maintenanceCompliance = percent(completedMaintenance, totalMaintenance);
-    const drillCompliance = percent(completedDrills, totalDrills);
+    const drillAssignmentTotal = totalDrillAssignments[0]?.count || 0;
+    const drillAssignmentCompleted = completedDrillAssignments[0]?.count || 0;
+    const drillCompliance = percent(drillAssignmentCompleted, drillAssignmentTotal);
     const overallCompliance = Math.round((maintenanceCompliance + drillCompliance) / 2);
 
     return {
@@ -63,8 +94,9 @@ export const ComplianceService = {
         drills: totalDrills,
         pendingMaintenance,
         overdueMaintenance,
+        lateCompletedMaintenance,
         completedMaintenance,
-        completedDrills,
+        completedDrills: drillAssignmentCompleted,
         missedDrills,
       },
       compliance: {
@@ -74,9 +106,10 @@ export const ComplianceService = {
       },
       risks: {
         overdueMaintenance,
+        lateCompletedMaintenance,
         missedDrills,
         status:
-          overdueMaintenance > 0 || missedDrills > 0
+          overdueMaintenance > 0 || missedDrills > 0 || lateCompletedMaintenance > 0
             ? "atRisk"
             : overallCompliance >= 85
             ? "compliant"

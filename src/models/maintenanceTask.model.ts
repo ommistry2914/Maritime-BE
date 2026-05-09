@@ -11,10 +11,15 @@ export interface IMaintenanceComment {
 export interface IMaintenanceTask extends Document {
   title: string;
   description?: string;
+  category: "engine" | "deck" | "electrical" | "hull" | "safetyEquipment" | "navigation" | "other";
+  component: string;
+  location?: string;
   ship: Types.ObjectId;
   assignedTo: Types.ObjectId;
   status: MaintenanceStatus;
   priority: "low" | "medium" | "high" | "critical";
+  estimatedHours?: number;
+  safetyCritical: boolean;
   dueDate: Date;
   completedAt?: Date;
   comments: IMaintenanceComment[];
@@ -36,6 +41,13 @@ const maintenanceTaskSchema = new Schema<IMaintenanceTask>(
   {
     title: { type: String, required: true, trim: true },
     description: { type: String, trim: true },
+    category: {
+      type: String,
+      enum: ["engine", "deck", "electrical", "hull", "safetyEquipment", "navigation", "other"],
+      required: true,
+    },
+    component: { type: String, required: true, trim: true },
+    location: { type: String, trim: true },
     ship: { type: Schema.Types.ObjectId, ref: "Ship", required: true },
     assignedTo: { type: Schema.Types.ObjectId, ref: "User", required: true },
     status: {
@@ -48,6 +60,8 @@ const maintenanceTaskSchema = new Schema<IMaintenanceTask>(
       enum: ["low", "medium", "high", "critical"],
       default: "medium",
     },
+    estimatedHours: { type: Number, min: 0.25, max: 500 },
+    safetyCritical: { type: Boolean, default: false },
     dueDate: { type: Date, required: true },
     completedAt: { type: Date },
     comments: { type: [commentSchema], default: [] },
