@@ -1,4 +1,4 @@
-import { Request } from "express";
+import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { ApiError } from "../utils/ApiError";
 import { UserModel } from "../models/user.model";
@@ -7,11 +7,23 @@ import {
   generateRefreshToken,
   verifyRefreshToken,
 } from "../utils/jwt";
+import { clearAuthCookies, setAuthCookies } from "../utils/authCookies";
+
+const toSafeUser = (user: any) => ({
+  id: user._id,
+  firstName: user.firstName,
+  lastName: user.lastName,
+  email: user.email,
+  role: user.role,
+  employeeId: user.employeeId,
+  rank: user.rank,
+  department: user.department,
+  phone: user.phone,
+});
 
 export const AuthService = {
-  async register(req: Request) {
-    console.log("req.body", req.body);
-    const { firstName,lastName, email, password } = req.body;
+  async register(req: Request, res: Response) {
+    const { firstName, lastName, email, password } = req.body;
 
     if (!firstName || !lastName || !email || !password)
       throw new ApiError(400, "Name, email, and password are required");
@@ -26,26 +38,20 @@ export const AuthService = {
       lastName,
       email,
       password: hashedPassword,
+      role: "crew",
     });
 
-    const accessToken = generateAccessToken({ id: user._id, email });
-    const refreshToken = generateRefreshToken({ id: user._id, email });
+    const accessToken = generateAccessToken({ id: user._id, email, role: user.role });
+    const refreshToken = generateRefreshToken({ id: user._id, email, role: user.role });
 
     user.refreshToken = refreshToken;
     await user.save();
+    setAuthCookies(res, accessToken, refreshToken);
 
-    const safeUser = {
-      id: user._id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      role: user.role,
-    };
-
-    return { user: safeUser, accessToken, refreshToken };
+    return { user: toSafeUser(user) };
   },
 
-  async login(req: Request) {
+  async login(req: Request, res: Response) {
     const { email, password } = req.body;
 
     if (!email || !password)
@@ -57,25 +63,18 @@ export const AuthService = {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) throw new ApiError(401, "Invalid email or password");
 
-    const accessToken = generateAccessToken({ id: user._id, email });
-    const refreshToken = generateRefreshToken({ id: user._id, email });
+    const accessToken = generateAccessToken({ id: user._id, email, role: user.role });
+    const refreshToken = generateRefreshToken({ id: user._id, email, role: user.role });
 
     user.refreshToken = refreshToken;
     await user.save();
+    setAuthCookies(res, accessToken, refreshToken);
 
-    const safeUser = {
-      id: user._id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      role: user.role,
-    };
-
-    return { user: safeUser, accessToken, refreshToken };
+    return { user: toSafeUser(user) };
   },
 
-  async refreshToken(req: Request) {
-    const { refreshToken } = req.body;
+  async refreshToken(req: Request, res: Response) {
+    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
     if (!refreshToken) throw new ApiError(400, "Refresh token required");
 
     const user = await UserModel.findOne({ refreshToken });
@@ -85,36 +84,50 @@ export const AuthService = {
       const decoded = verifyRefreshToken(refreshToken) as {
         id: string;
         email: string;
+        role: "superAdmin" | "admin" | "crew" | "user";
       };
 
       const newAccessToken = generateAccessToken({
         id: decoded.id,
         email: decoded.email,
+        role: decoded.role,
       });
       const newRefreshToken = generateRefreshToken({
         id: decoded.id,
         email: decoded.email,
+        role: decoded.role,
       });
 
       user.refreshToken = newRefreshToken;
       await user.save();
+      setAuthCookies(res, newAccessToken, newRefreshToken);
 
-      return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+      return { user: toSafeUser(user) };
     } catch {
       throw new ApiError(401, "Invalid or expired refresh token");
     }
   },
 
-  async logout(req: Request) {
-    const { refreshToken } = req.body;
-    if (!refreshToken) throw new ApiError(400, "Refresh token required");
+  async logout(req: Request, res: Response) {
+    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
 
-    const user = await UserModel.findOne({ refreshToken });
-    if (!user) throw new ApiError(400, "Invalid token");
+    if (refreshToken) {
+      const user = await UserModel.findOne({ refreshToken });
+      if (user) {
+        user.refreshToken = undefined;
+        await user.save();
+      }
+    }
 
-    user.refreshToken = undefined;
-    await user.save();
+    clearAuthCookies(res);
 
     return { message: "Logged out successfully" };
+  },
+
+  async me(req: Request) {
+    if (!req.user?.id) throw new ApiError(401, "Unauthorized");
+    const user = await UserModel.findById(req.user.id).select("-password -refreshToken");
+    if (!user) throw new ApiError(404, "User not found");
+    return { user: toSafeUser(user) };
   },
 };

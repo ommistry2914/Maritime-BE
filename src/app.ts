@@ -3,8 +3,10 @@ import morgan from "morgan";
 import cors from "cors";
 import helmet from "helmet";
 import mongoose from "mongoose";
+import cookieParser from "cookie-parser";
 import logger from "./utils/logger"; 
 import routes from "./routes";
+import config from "./config/db";
 
 import { errorHandler } from "./middlewares/errorHandler";
 import { rateLimiter } from "./middlewares/rateLimiter";
@@ -12,7 +14,13 @@ import { rateLimiter } from "./middlewares/rateLimiter";
 const app: Application = express();
 
 app.use(helmet());
-app.use(cors());
+app.use(
+  cors({
+    origin: config.client_url,
+    credentials: true,
+  })
+);
+app.use(cookieParser());
 app.use(rateLimiter);
 app.use(
   morgan(":method :url :status - :response-time ms", {

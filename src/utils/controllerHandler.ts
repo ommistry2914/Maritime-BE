@@ -3,7 +3,7 @@ import { sendResponse } from "./sendResponse";
 import { ApiError } from "./ApiError";
 import { catchAsync } from "./catchAsync";
 
-type ControllerFn<T = any> = (req: Request) => Promise<T>;
+type ControllerFn<T = any> = (req: Request, res: Response) => Promise<T>;
 
 interface HandlerOptions {
   statusCode?: number;
@@ -21,7 +21,7 @@ export const controllerHandler = <T>(
 ) =>
   catchAsync(async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await fn(req);
+      const data = await fn(req, res);
 
       // Send standardized success response
       sendResponse(res, data, options?.message || "Request successful", options?.statusCode || 200);

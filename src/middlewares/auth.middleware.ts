@@ -4,15 +4,29 @@ import config from "../config/db/index";
 
 export const authenticate = (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer "))
+  const bearerToken = authHeader?.startsWith("Bearer ")
+    ? authHeader.split(" ")[1]
+    : undefined;
+  const token = req.cookies?.accessToken || bearerToken;
+
+  if (!token)
     return res.status(401).json({ message: "No token provided" });
 
-  const token = authHeader.split(" ")[1];
   try {
     const decoded = jwt.verify(token, config.ACCESS_SECRET!);
-    (req as any).user = decoded;
+    req.user = decoded as any;
     next();
   } catch {
     return res.status(403).json({ message: "Invalid or expired token" });
   }
 };
+
+export const authorize =
+  (...roles: string[]) =>
+  (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    next();
+  };
