@@ -52,12 +52,13 @@ async function connectToDatabase(): Promise<void> {
 const handler = async (req: any, res: any) => {
   try {
     await connectToDatabase();
-  } catch {
+    // Pass the request to Express
+    return app(req, res);
+  } catch (error) {
+    logger.error("Handler error:", error);
     res.status(503).json({ message: "Database connection failed. Please try again." });
     return;
   }
-  // Hand off to Express
-  return app(req, res);
 };
 
 export default handler;

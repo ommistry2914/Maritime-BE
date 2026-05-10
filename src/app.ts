@@ -14,18 +14,35 @@ import { rateLimiter } from "./middlewares/rateLimiter";
 const app: Application = express();
 
 app.use(helmet());
-app.use(
-  cors({
-    origin: config.client_url,
-    credentials: true,
-  })
-);
+
+// CORS Configuration - support both development and production URLs
+const corsOptions = {
+  origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+    // Merge hardcoded production URLs with env-configured ones
+    const allowedOrigins = [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'https://maritime-fe.vercel.app',
+      config.client_url,
+    ].filter(Boolean);
+    
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      logger.warn(`CORS blocked request from origin: ${origin}`);
+      callback(null, false); // Don't throw error, just don't allow
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
 
 // Handle preflight OPTIONS requests globally
-app.options('*', cors({
-  origin: config.client_url,
-  credentials: true,
-}));
+app.options('*', cors(corsOptions));
 
 app.use(cookieParser());
 app.use(rateLimiter);
