@@ -20,6 +20,13 @@ app.use(
     credentials: true,
   })
 );
+
+// Handle preflight OPTIONS requests globally
+app.options('*', cors({
+  origin: config.client_url,
+  credentials: true,
+}));
+
 app.use(cookieParser());
 app.use(rateLimiter);
 app.use(
