@@ -2,6 +2,20 @@ import { z } from "zod";
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid id");
 const dateString = z.string().datetime().or(z.string().min(10));
+const optionalEmployeeId = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().trim().min(2, "Employee ID must be at least 2 characters").optional()
+);
+const optionalRank = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().trim().min(2, "Rank or designation must be at least 2 characters").optional()
+);
+const phoneNumber = z
+  .string()
+  .trim()
+  .min(7, "Phone number must be at least 7 characters")
+  .max(20, "Phone number must be at most 20 characters")
+  .regex(/^\+?[0-9\s().-]+$/, "Phone number can only contain digits, spaces, +, -, . and parentheses");
 const futureOrTodayDate = dateString.refine((value) => {
   const input = new Date(value);
   const startOfToday = new Date();
@@ -88,13 +102,50 @@ export const markDrillSchema = z.object({
 });
 
 export const createUserSchema = z.object({
-  firstName: z.string().trim().min(2),
-  lastName: z.string().trim().min(2),
-  email: z.string().trim().email(),
-  password: z.string().trim().min(6),
+  firstName: z.string().trim().min(2, "First name must be at least 2 characters"),
+  lastName: z.string().trim().min(2, "Last name must be at least 2 characters"),
+  email: z.string().trim().email("Invalid email format"),
+  password: z.string().trim().min(6, "Password must be at least 6 characters"),
   role: z.enum(["admin", "crew", "user"]),
-  employeeId: z.string().trim().optional(),
-  rank: z.string().trim().optional(),
+  employeeId: optionalEmployeeId,
+  rank: optionalRank,
   department: z.enum(["deck", "engine", "safety", "operations", "administration"]).optional(),
-  phone: z.string().trim().optional(),
+  phone: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    phoneNumber.optional()
+  ),
+}).superRefine((data, ctx) => {
+  if (data.role === "admin") return;
+
+  if (!data.employeeId) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["employeeId"],
+      message: "Employee ID is required",
+    });
+  }
+
+  if (!data.rank) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["rank"],
+      message: "Rank or designation is required",
+    });
+  }
+
+  if (!data.department) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["department"],
+      message: "Department is required",
+    });
+  }
+
+  if (!data.phone) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["phone"],
+      message: "Phone number is required",
+    });
+  }
 });
