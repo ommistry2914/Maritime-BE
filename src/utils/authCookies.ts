@@ -1,12 +1,21 @@
 import { Response } from "express";
 import config from "../config/db";
 
-const isProduction = config.node_env === "production";
+/**
+ * When the frontend and backend are on different domains (e.g. Vercel deployments),
+ * the browser will only send cookies if:
+ *   - The cookie has SameSite=None
+ *   - The cookie has Secure=true  (HTTPS required by all browsers)
+ *
+ * We detect "cross-site" by checking if VERCEL is set (serverless) OR if NODE_ENV
+ * is explicitly "production". Locally (same-origin via proxy) lax/non-secure is fine.
+ */
+const isCrossSite = !!process.env.VERCEL || config.node_env === "production";
 
 export const authCookieOptions = {
   httpOnly: true,
-  secure: isProduction,
-  sameSite: isProduction ? ("none" as const) : ("lax" as const),
+  secure: isCrossSite,                            // must be true for SameSite=None
+  sameSite: isCrossSite ? ("none" as const) : ("lax" as const),
   path: "/",
 };
 
@@ -17,11 +26,11 @@ export const setAuthCookies = (
 ) => {
   res.cookie("accessToken", accessToken, {
     ...authCookieOptions,
-    maxAge: 15 * 60 * 1000,
+    maxAge: 15 * 60 * 1000,           // 15 min
   });
   res.cookie("refreshToken", refreshToken, {
     ...authCookieOptions,
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });
 };
 
