@@ -48,7 +48,7 @@ export const AuthService = {
     await user.save();
     setAuthCookies(res, accessToken, refreshToken);
 
-    return { user: toSafeUser(user) };
+    return { user: toSafeUser(user), accessToken, refreshToken };
   },
 
   async login(req: Request, res: Response) {
@@ -70,7 +70,7 @@ export const AuthService = {
     await user.save();
     setAuthCookies(res, accessToken, refreshToken);
 
-    return { user: toSafeUser(user) };
+    return { user: toSafeUser(user), accessToken, refreshToken };
   },
 
   async refreshToken(req: Request, res: Response) {
@@ -102,7 +102,7 @@ export const AuthService = {
       await user.save();
       setAuthCookies(res, newAccessToken, newRefreshToken);
 
-      return { user: toSafeUser(user) };
+      return { user: toSafeUser(user), accessToken: newAccessToken, refreshToken: newRefreshToken };
     } catch {
       throw new ApiError(401, "Invalid or expired refresh token");
     }
