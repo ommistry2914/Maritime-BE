@@ -3,6 +3,7 @@ import app from "../src/app";
 import config from "../src/config/db";
 import logger from "../src/utils/logger";
 import initialUserCreation from "../src/utils/initialUserCreation";
+import envCheck from "../src/utils/envCheck";
 
 /**
  * Connection caching for Vercel serverless.
@@ -48,14 +49,51 @@ async function connectToDatabase(): Promise<void> {
   }
 }
 
+// Log env var status at cold start to help diagnose missing envs on Vercel
+try {
+  envCheck.logEnvStatus();
+  if (envCheck.hasCriticalEnvMissing()) {
+    logger.warn("Critical environment variables missing — DB will likely fail to connect.");
+  }
+} catch (e) {
+  logger.warn("Failed to run env checks:", e);
+}
+
+// Minimal CORS header helper for error/preflight responses
+function setCorsHeaders(req: any, res: any) {
+  const origin = req.headers?.origin || req.headers?.Origin || "*";
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+}
+
 // Wrap the Express app so every request ensures a live DB connection first.
 const handler = async (req: any, res: any) => {
+  // Shortcut: respond to preflight without requiring DB connection
+  if (req.method === "OPTIONS") {
+    try {
+      setCorsHeaders(req, res);
+      return res.status(204).end();
+    } catch (err) {
+      logger.error("Preflight handling failed:", err);
+      setCorsHeaders(req, res);
+      return res.status(204).end();
+    }
+  }
+
   try {
     await connectToDatabase();
     // Pass the request to Express
     return app(req, res);
   } catch (error) {
     logger.error("Handler error:", error);
+    // Ensure CORS headers are present even when we short-circuit with an error
+    try {
+      setCorsHeaders(req, res);
+    } catch (e) {
+      logger.warn("Failed to set CORS headers on error response", e);
+    }
     res.status(503).json({ message: "Database connection failed. Please try again." });
     return;
   }
